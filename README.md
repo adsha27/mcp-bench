@@ -1,77 +1,75 @@
 # mcp-bench
 
-Benchmark harness for MCP (Model Context Protocol) tool servers. Measures latency, success rate, and throughput under load.
+Load testing and benchmarking for MCP (Model Context Protocol) tool servers.
 
-Built from production experience running 46 MCP tools in a live government-services chatbot. When tools fail silently, users get stuck. This catches that before it ships.
+Built out of a real production problem: we were running a government-services WhatsApp chatbot with a large MCP tool layer. The observability setup showed some tools failing silently — `check_application_status` had a 0% success rate over 22 live calls, and nobody caught it until a user got stuck in a loop. Unit tests passed. The tool worked in isolation. It fell apart under real usage patterns.
 
-## What it does
+mcp-bench is what we built to catch that class of problem: load test the actual tool server under realistic concurrency, see which tools degrade, before users find out.
 
-- Load test any MCP server with configurable concurrency and user count
-- Measure per-tool latency (p50, p95, p99) and success/failure rates
-- Generate a report showing which tools are slow or flaky under load
-- Works with any MCP server that speaks the stdio or HTTP transport
+## What it measures
+
+- Per-tool latency: p50 / p95 / p99
+- Success rate and failure breakdown by error type
+- Throughput under configurable concurrency
 
 ## Usage
 
 ```bash
-pip install mcp-bench
+git clone https://github.com/adsha27/mcp-bench
+cd mcp-bench && pip install -e .
 
-# Run against an MCP server
-mcp-bench run --server "python myserver.py" --tools search_tool,submit_tool --users 100 --concurrency 10
+# Run against an stdio MCP server
+mcp-bench run --server "python myserver.py" --users 100 --concurrency 10
 
-# Or point at an HTTP MCP endpoint
-mcp-bench run --server "http://localhost:3000/mcp" --users 100
+# HTTP transport
+mcp-bench run --http http://localhost:3000 --users 100 --concurrency 20
 
-# Generate HTML report
-mcp-bench report results.json --output report.html
+# Write an HTML report
+mcp-bench run --server "python myserver.py" --users 100 --report report.html
 ```
 
-## Example output
+## Sample output
+
+Running against the included mock server (100 users, 10 concurrency):
 
 ```
-Tool benchmark results (100 users, 10 concurrent)
-Duration: 12.4s
+Benchmark results (300 total calls, 8.2s)
 
-tool                     calls  success  fail   p50ms  p95ms  p99ms
-search_opportunities       100    94%     6%      340    890   1420
-submit_application         100    98%     2%      210    450    890
-get_profile                100   100%     0%       80    140    200
-check_status               100    72%    28%     1200   3400   5000  <-- failing
-
-check_status is failing at 28% - likely a timeout or upstream API issue.
+tool                           calls  success    fail   p50ms   p95ms   p99ms
+echo                             100    100.0%       0       1       3       5
+slow_echo                        100    100.0%       0     503     512     521
+flaky_tool                       100     69.3%      31      <1       2       4  <-- failing
 ```
 
-## Report
+`flaky_tool` is configured to fail 30% of the time. In production, this is the pattern that surfaces tools with rate limits, flaky upstream APIs, or connection pool exhaustion under concurrency.
 
-`mcp-bench report` produces an HTML file with:
-- Per-tool success rate over time (useful for spotting degradation mid-run)
-- Latency histogram per tool
-- Error breakdown by error type (timeout, connection, tool error)
-- Comparison across multiple benchmark runs
+## Mock server
 
-## Why this exists
+`examples/mock_server.py` ships with three tools for testing without a real MCP server:
 
-Production MCP deployments fail in ways that unit tests miss. A tool that works fine under 1 user can fail under 10 if it hits a rate limit, a shared connection pool, or a flaky upstream API. The only way to know is to run it under load and watch the numbers.
+| Tool | Behavior |
+|------|----------|
+| `echo` | Returns immediately |
+| `slow_echo` | 500ms delay (simulates an external API call) |
+| `flaky_tool` | Fails 30% of the time |
 
 ## Structure
 
 ```
 mcp_bench/
-  runner.py      Async load runner
-  client.py      MCP client (stdio + HTTP)
-  report.py      HTML report generator
-  metrics.py     Latency and rate tracking
+  runner.py     async load runner with asyncio.Semaphore
+  client.py     MCP client — stdio and HTTP transports
+  metrics.py    p50/p95/p99 tracking, per-tool aggregation
+  report.py     HTML report generator
 examples/
-  mock_server.py Example MCP server for testing
+  mock_server.py
 tests/
 ```
 
 ## Install
 
 ```bash
-pip install mcp-bench
-# or
-git clone https://github.com/adsha27/mcp-bench
-cd mcp-bench
 pip install -e .
+# or
+pip install mcp-bench  # once published
 ```
