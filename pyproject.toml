@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "mcp-bench"
+version = "0.1.0"
+description = "Load testing and benchmarking for MCP tool servers"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "httpx>=0.28.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+mcp-bench = "mcp_bench.cli:app"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
